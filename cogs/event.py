@@ -17,7 +17,6 @@ from discord.ext import commands, tasks
 class Event(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.update_schedule.start()
         DIR = 'data/event'
         if pathlib.Path.is_file(pathlib.Path(f"{DIR}/base_data.json")) == False:
             base_data = {
@@ -26,7 +25,9 @@ class Event(commands.Cog):
             pathlib.Path.touch(pathlib.Path(f"{DIR}/base_data.json"))
             with open(f"{DIR}/base_data.json", 'w') as f:
                 json.dump(base_data, f)
+
             
+        self.update_schedule.start()
         #self.update_missing_file.start()
 
     # Task: check the remaining files are qualified to send, and delete the file if valid
@@ -51,27 +52,43 @@ class Event(commands.Cog):
                 )
             current_time = current_time.replace(tzinfo=zoneinfo.ZoneInfo(data["timezone"]))
             if target_time < current_time:
-                channel = self.bot.get_channel(data["channel_id"])
+                channel = (self.bot.get_channel(data["channel_id"]) or await self.bot.fetch_channel(data["channel_id"]))
                 pathlib.Path.unlink(pathlib.Path(f"{DIR}/{file_name.name}"))
                 await channel.send(data["context"])
+
 
 
     # Create scheduled message
     @discord.slash_command(
         name="create_schedule",
-        description="Create a scheduled message to send out. (s_date = YYYY-MM-DD, s_time = HH:MM)" 
+        description="Create a scheduled message to send out. (s_date = YYYY-MM-DD, s_time = HH:MM)",
     )
     @default_permissions(administrator=True)
     async def create_schedule_command(self, 
                                       ctx, 
-                                      selected_date: str, 
-                                      selected_time: str,  
-                                      selected_channel: GuildChannel, 
-                                      selected_context: str,
-                                      selected_timezone: typing.Optional[str] = None):
+                                      selected_date: discord.Option(
+                                          str, 
+                                          description="Date setting. (format: YYYY/MM/DD)"
+                                      ),
+                                      selected_time: discord.Option(
+                                          str, 
+                                          description="Time setting. (format: HH:MM)"
+                                      ),  
+                                      selected_channel: discord.Option(
+                                          GuildChannel, 
+                                          description="Channel setting."
+                                      ),
+                                      selected_timezone: discord.Option(
+                                          str, 
+                                          default="America/Toronto",
+                                          description="Timezone setting. (format: tz database)"
+                                      ),
+                                      selected_context: discord.Option(
+                                          str, 
+                                          description="Context setting."
+                                      )
+    ):
         
-        if selected_timezone == None:
-            selected_timezone = "America/Toronto"
 
         try:
             target_time = datetime.datetime(
@@ -122,7 +139,11 @@ class Event(commands.Cog):
     @default_permissions(administrator=True)
     async def delete_schedule_command(self, 
                                       ctx, 
-                                      selected_id: int):
+                                      selected_id: discord.Option(
+                                          int, 
+                                          description="Scheduled message ID selection."
+                                      )
+    ):
             self.update_schedule.restart()
             DIR = 'data/event'
             try: 
@@ -141,7 +162,12 @@ class Event(commands.Cog):
     @default_permissions(administrator=True)
     async def list_schedule_command(self, 
                                     ctx, 
-                                    selected_page: int):
+                                    selected_page: discord.Option(
+                                          int, 
+                                          description="Page selection."
+                                    )
+
+    ):
             self.update_schedule.restart()
             DIR = 'data/event'
             files = []
