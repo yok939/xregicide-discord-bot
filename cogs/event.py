@@ -30,14 +30,16 @@ class Event(commands.Cog):
         #self.update_missing_file.start()
 
     # Task: check the remaining files are qualified to send, and delete the file if valid
-    @tasks.loop(seconds=20)
+    @tasks.loop(seconds=5)
     async def update_schedule(self): 
         DIR = 'data/event'
-        files = os.listdir(DIR)
+        files = pathlib.Path(DIR).rglob("*")
         target_time = datetime.datetime.now()
         current_time = datetime.datetime.now()
-        for name in files:
-            with open(f"{DIR}/{name}.json", 'r') as f:
+        for file_name in files:
+            if file_name.name == "base_data.json":
+                continue
+            with open(f"{DIR}/{file_name.name}", 'r') as f:
                 data = json.load(f) 
                 target_time = datetime.datetime(
                     year=int(data["date"][0:4]), 
@@ -50,27 +52,9 @@ class Event(commands.Cog):
             current_time = current_time.replace(tzinfo=zoneinfo.ZoneInfo(data["timezone"]))
             if target_time < current_time:
                 channel = self.bot.get_channel(data["channel_id"])
-                pathlib.Path.unlink(pathlib.Path(f"{DIR}/{name}.json"))
+                pathlib.Path.unlink(pathlib.Path(f"{DIR}/{file_name.name}"))
                 await channel.send(data["context"])
 
-    # !!! NOT USING !!!
-    # Task: check the missing files in 'data/event' folder, and changing the remaining files to fill up the gap
-    @tasks.loop(seconds=5)
-    async def update_missing_file(self):
-        DIR = 'data/event'
-        files = os.listdir(DIR)
-        j = 0
-        for name in files:
-            if name == f"event_{j:04d}":
-                continue
-            data = ""
-            with open(f"{DIR}/{name}", 'r') as f:
-                data = json.load(f) 
-            pathlib.Path.unlink(pathlib.Path(f"{DIR}/{name}"))
-            pathlib.Path.touch(pathlib.Path(f"{DIR}/event_{j:04d}"))
-            with open(f"{DIR}/event_{j:04d}", 'r') as f:
-                json.dump(f, data) 
-            j += 1
 
     # Create scheduled message
     @discord.slash_command(
