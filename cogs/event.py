@@ -158,7 +158,8 @@ class Event(commands.Cog):
             await ctx.respond(f"The command got an unexpected error.", ephemeral=True)
             return
         else:
-            await ctx.respond(f"Scheduled message created to be sent at {target_time.strftime("%Y-%m-%dT%H:%M:%SZ")}.\nContext: ``{selected_context}``.", ephemeral=True)
+            respond_message = f"Scheduled message created to be sent at **{target_time.strftime("%Y-%m-%dT %H:%M:%S %Z%z")}**.\n**Context**:\n{selected_context}"
+            await ctx.respond(respond_message, ephemeral=True)
 
     # Delete scheduled message
     @discord.slash_command(
@@ -211,13 +212,13 @@ class Event(commands.Cog):
                 return
 
             formated_list = f""""""
-            formated_list += (f"List of scheduled message.\n")
+            formated_list += (f"List of scheduled message:\n")
             for i in range((selected_page - 1) * 10, min(len(files), selected_page * 10)):
                 with open(f"{DIR}/{files[i]}", 'r') as f:
                     detailed_context = json.load(f)["context"]
-                formated_list += (f"* id: ``{int(files[i][6:10])}``, context: \"{detailed_context}\"\n")
+                formated_list += (f"Message id: ``{int(files[i][6:10])}``\n**Context**: \n{detailed_context}\n\n")
             formated_list += (f"``Page {selected_page}/{max_page}``\n")
-            await ctx.respond(formated_list, ephemeral=True)
+            await ctx.respond(formated_list)
             
 
 
