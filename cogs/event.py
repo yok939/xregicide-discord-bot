@@ -1,17 +1,17 @@
 import os
 import pathlib
-from discord.abc import GuildChannel
-from discord.commands.permissions import default_permissions
 from dotenv import load_dotenv
 
 import math
 import json
 import datetime
-import typing
-import zoneinfo
+import pytz
+import asyncio
 
 import discord
 from discord.ext import commands, tasks
+from discord.abc import GuildChannel
+from discord.commands.permissions import default_permissions
 
 
 class Event(commands.Cog):
@@ -30,34 +30,48 @@ class Event(commands.Cog):
         self.update_schedule.start()
         #self.update_missing_file.start()
 
+    # LATER CLEAN
     # Task: check the remaining files are qualified to send, and delete the file if valid
     @tasks.loop(seconds=5)
     async def update_schedule(self): 
-        DIR = 'data/event'
-        files = pathlib.Path(DIR).rglob("*")
-        target_time = datetime.datetime.now()
-        current_time = datetime.datetime.now()
-        for file_name in files:
-            if file_name.name == "base_data.json":
-                continue
-            with open(f"{DIR}/{file_name.name}", 'r') as f:
-                data = json.load(f) 
+        try:
+            DIR = 'data/event'
+            files = pathlib.Path(DIR).rglob("*")
+            target_time = datetime.datetime.now()
+            current_time = datetime.datetime.now()
+            for file_name in files:
+                if file_name.name == "base_data.json":
+                    continue
+                with open(f"{DIR}/{file_name.name}", 'r') as f:
+                    data = json.load(f) 
+
                 target_time = datetime.datetime(
                     year=int(data["date"][0:4]), 
                     month=int(data["date"][5:7]), 
                     day=int(data["date"][8:10]), 
                     hour=int(data["time"][0:2]), 
                     minute=int(data["time"][3:5]), 
-                    tzinfo=zoneinfo.ZoneInfo(data["timezone"])
+                    tzinfo=pytz.timezone(data["timezone"])
                 )
-            current_time = current_time.replace(tzinfo=zoneinfo.ZoneInfo(data["timezone"]))
-            if target_time < current_time:
-                channel = (self.bot.get_channel(data["channel_id"]) or await self.bot.fetch_channel(data["channel_id"]))
-                pathlib.Path.unlink(pathlib.Path(f"{DIR}/{file_name.name}"))
-                await channel.send(data["context"])
+                current_time = datetime.datetime.now(tz=pytz.timezone(data["timezone"]))
+                current_time = current_time.replace(tzinfo=pytz.timezone(data["timezone"]))
+
+                """
+                print(f"File name   : {file_name}")
+                print(f"Current time: {current_time}")
+                print(f"Target time : {target_time}")
+                """
+
+                if target_time < current_time:
+                    channel = (self.bot.get_channel(data["channel_id"]) or await self.bot.fetch_channel(data["channel_id"]))
+                    pathlib.Path.unlink(pathlib.Path(f"{DIR}/{file_name.name}"))
+                    await channel.send(data["context"])
+        except:
+            print("ERROR ENCOUNTEh: cannot send message")
 
 
 
+    # LATER CLEAN
     # Create scheduled message
     @discord.slash_command(
         name="create_schedule",
@@ -78,42 +92,51 @@ class Event(commands.Cog):
                                           GuildChannel, 
                                           description="Channel setting."
                                       ),
-                                      selected_timezone: discord.Option(
-                                          str, 
-                                          default="America/Toronto",
-                                          description="Timezone setting. (format: tz database)"
-                                      ),
                                       selected_context: discord.Option(
                                           str, 
-                                          description="Context setting."
+                                          required=False,
+                                          default=None, 
+                                          description="Context setting. (Currently only support single line message in argument)"
+                                      ),
+                                      selected_timezone: discord.Option(
+                                          str, 
+                                          required=False,
+                                          default="America/Toronto", 
+                                          description="Timezone setting. (format: tz database)"
                                       )
     ):
         
 
         try:
+
+            def _checker(received):
+                return ctx.author == received.author and ctx.channel == received.channel
+
+            if selected_context == None:
+                await ctx.respond(f"Send needed message below this message (Timeout: ``1 minute``)", ephemeral=True)
+                _msg = await self.bot.wait_for('message', timeout=60.0, check=_checker)
+                selected_context = _msg.content
+                await _msg.delete()
+
             target_time = datetime.datetime(
                     year=int(selected_date[0:4]), 
                     month=int(selected_date[5:7]), 
                     day=int(selected_date[8:10]), 
                     hour=int(selected_time[0:2]), 
                     minute=int(selected_time[3:5]), 
-                    tzinfo=zoneinfo.ZoneInfo(selected_timezone)
+                    tzinfo=pytz.timezone(selected_timezone)
             )
 
-            self.update_schedule.restart()
             DIR = 'data/event'
             base_data = 0
             data = 0
 
             with open(f"{DIR}/base_data.json", "r") as f:
                 base_data = json.load(f)
-
             base_data["total_id"] += 1
-
             with open(f"{DIR}/base_data.json", "w") as f:
                 json.dump(base_data, f)
 
-            pathlib.Path.touch(pathlib.Path(f"{DIR}/event_{base_data["total_id"]:04d}.json"))
             data = {
                 "schedule_id": base_data["total_id"],
                 "date": selected_date,
@@ -122,14 +145,20 @@ class Event(commands.Cog):
                 "context": selected_context,
                 "channel_id": selected_channel.id
             }
+
+            pathlib.Path.touch(pathlib.Path(f"{DIR}/event_{base_data["total_id"]:04d}.json"))
             with open(f"{DIR}/event_{base_data["total_id"]:04d}.json", 'w') as f:
                 json.dump(data, f, indent=4, default=str) 
-            
-        except:
-            await ctx.respond(f"The time format is not valid.", ephemeral=True)
-            return
 
-        await ctx.respond(f"Scheduled message created at {target_time.strftime("%Y-%m-%dT%H:%M:%SZ")}.\nContext: ``{selected_context}``.", ephemeral=True)
+            self.update_schedule.restart()
+        except asyncio.TimeoutError:            
+            await ctx.respond(f"Bot timed out due to no message been sent.", ephemeral=True)
+            return
+        except:
+            await ctx.respond(f"The command got an unexpected error.", ephemeral=True)
+            return
+        else:
+            await ctx.respond(f"Scheduled message created to be sent at {target_time.strftime("%Y-%m-%dT%H:%M:%SZ")}.\nContext: ``{selected_context}``.", ephemeral=True)
 
     # Delete scheduled message
     @discord.slash_command(
