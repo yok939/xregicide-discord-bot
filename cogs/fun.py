@@ -23,7 +23,7 @@ class Fun(commands.Cog):
         try:
             messages = await channel.history(limit=1000, after=target_time).flatten()
         except:
-            ctx.respond(f"Cam is not in this clan")
+            await ctx.respond(f"Cam is not in this clan")
             return
         target_messages = []
         for msg in messages:
